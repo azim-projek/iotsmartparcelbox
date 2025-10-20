@@ -1,5 +1,4 @@
-// Smart Parcel Box - ESP32 + Keypad + Servo + Ultrasonic + Telegram (Password Editable)
-// Components: ESP32, MG996R Servo, HC-SR04 Ultrasonic, 4x4 Keypad
+// Smart Parcel Box - ESP32 + Keypad + Servo + Ultrasonic + Telegram + Door Lock
 
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
@@ -21,8 +20,11 @@ UniversalTelegramBot bot(BOT_TOKEN, client);
 #define ECHO_PIN 34
 
 // === Servo Pins ===
-#define SERVO_DROP 17     // Top barrier servo
-#define SERVO_DOOR 18     // Bottom door servo
+#define SERVO_DROP 17     // Top servo (drop door)
+#define SERVO_DOOR 18     // Bottom servo (parcel door)
+
+// === Door Lock Pin ===
+#define LOCK_PIN 19       // Relay/transistor controlling electrical lock
 
 Servo dropServo;
 Servo doorServo;
@@ -44,15 +46,15 @@ Keypad keypad = Keypad(makeKeymap(keys), rowPins, colPins, ROWS, COLS);
 // === Variables ===
 long duration;
 int distance;
-const int threshold = 30;  // cm
+const int threshold = 15;  // cm
 bool parcelDetected = false;
 
 String correctPassword = "1234";   // Default password
 String enteredPassword = "";
 unsigned long lastCheckTime = 0;
-const unsigned long TELEGRAM_CHECK_INTERVAL = 2000; // 2s
+const unsigned long TELEGRAM_CHECK_INTERVAL = 2000;
 
-// === Function to read Ultrasonic ===
+// === Read Ultrasonic ===
 int readUltrasonic() {
   digitalWrite(TRIG_PIN, LOW);
   delayMicroseconds(2);
@@ -63,23 +65,31 @@ int readUltrasonic() {
   return duration * 0.034 / 2;
 }
 
-// === Safe Servo Movement (works with both continuous & 180°) ===
+// === Servo Movement Function ===
 void moveServo(Servo &servo, int angle, int delayTime = 1000) {
   servo.write(angle);
   delay(delayTime);
-  servo.write(90);  // Stop / neutral position for continuous type
+  servo.write(90);  // stop / neutral for continuous servo
 }
 
-// === Telegram Message Handling ===
+// === Move both servos together ===
+void moveBothServos() {
+  dropServo.write(90);
+  doorServo.write(90);
+  delay(3000);  // both servos stay at 90° for 3 seconds
+  dropServo.write(0);   // return to normal position
+  doorServo.write(0);
+}
+
+// === Telegram Command Handling ===
 void handleNewMessages(int numNewMessages) {
   for (int i = 0; i < numNewMessages; i++) {
     String chat_id = String(bot.messages[i].chat_id);
     String text = bot.messages[i].text;
-
-    if (chat_id != CHAT_ID) continue; // Ignore messages from unknown users
+    if (chat_id != CHAT_ID) continue;
 
     if (text.startsWith("/setpass ")) {
-      String newPass = text.substring(9); // Extract password
+      String newPass = text.substring(9);
       if (newPass.length() >= 4 && newPass.length() <= 8) {
         correctPassword = newPass;
         bot.sendMessage(CHAT_ID, "🔑 Password updated to: " + correctPassword, "");
@@ -113,15 +123,18 @@ void setup() {
   Serial.println("\n✅ WiFi Connected");
   client.setInsecure();
 
-  // Setup pins and servos
+  // Pin setup
   pinMode(TRIG_PIN, OUTPUT);
   pinMode(ECHO_PIN, INPUT);
+  pinMode(LOCK_PIN, OUTPUT);
+ digitalWrite(LOCK_PIN, LOW); // lock initially
+
+
+  // Servo setup
   dropServo.attach(SERVO_DROP);
   doorServo.attach(SERVO_DOOR);
-
-  // Neutral position (stop spinning)
-  dropServo.write(90);
-  doorServo.write(90);
+  dropServo.write(0);
+  doorServo.write(0);
 
   bot.sendMessage(CHAT_ID, "📦 Smart Parcel Box System Online!\nUse /help for commands.", "");
 }
@@ -133,63 +146,64 @@ void loop() {
   Serial.print(distance);
   Serial.println(" cm");
 
-  // Detect parcel
-  if (distance > 0 && distance < threshold && !parcelDetected)
-{
+  // Detect parcel with ultrasonic
+  if (distance > 0 && distance < threshold && !parcelDetected) {
     parcelDetected = true;
     bot.sendMessage(CHAT_ID, "📦 Parcel detected! Dropping into storage...", "");
-    
-    moveServo(dropServo, 180, 1500);  // open/drop
-    delay(500);
+
+    moveBothServos();  // ✅ both servos move together for 3 sec
 
     bot.sendMessage(CHAT_ID, "✅ Parcel safely stored!", "");
   }
 
-  // === Keypad input ===
-char key = keypad.getKey();
-if (key) {
-  Serial.print("Key pressed: ");
-  Serial.println(key);
+  // === Keypad Password Entry ===
+  char key = keypad.getKey();
+  if (key) {
+    Serial.print("Key pressed: ");
+    Serial.println(key);
 
-  if (key == '#') {
-    // '#' = Confirm password
-    enteredPassword.trim();
-    correctPassword.trim();
+    if (key == '#') {
+      enteredPassword.trim();
+      correctPassword.trim();
 
-    Serial.print("Entered Password: '");
-    Serial.print(enteredPassword);
-    Serial.print("'  (len=");
-    Serial.print(enteredPassword.length());
-    Serial.println(")");
-
-    Serial.print("Correct Password: '");
-    Serial.print(correctPassword);
-    Serial.print("'  (len=");
-    Serial.print(correctPassword.length());
-    Serial.println(")");
-
-    if (enteredPassword == correctPassword) {
+      if (enteredPassword == correctPassword) {
       Serial.println("✅ Correct password!");
-      bot.sendMessage(CHAT_ID, "🔓 Correct password! Bottom door unlocked.", "");
-      moveServo(doorServo, 0, 2500);  // open door
-      delay(2000);
-      moveServo(doorServo, 180, 2500); // close door again
-      bot.sendMessage(CHAT_ID, "📭 Parcel retrieved. Door locked again.", "");
-    } else {
-      Serial.println("❌ Wrong password!");
-      bot.sendMessage(CHAT_ID, "❌ Wrong password!", "");
-    }
+      bot.sendMessage(CHAT_ID, "🔓 Correct password! Unlocking door...", "");
 
-    enteredPassword = ""; // reset input
-  } 
-  else if (key == '*') {
-    enteredPassword = "";
-    Serial.println("Password cleared.");
-  } 
-  else {
-    enteredPassword += key;
-    Serial.print("Entered so far: ");
-    Serial.println(enteredPassword);
+      // ✅ Turn relay ON (unlock)
+      digitalWrite(LOCK_PIN, HIGH);
+      delay(3000);  // keep unlocked for 3 seconds
+
+      // 🔒 Then lock again
+      digitalWrite(LOCK_PIN, LOW);
+      bot.sendMessage(CHAT_ID, "📭 Door locked again.", "");
+  } else {
+        Serial.println("❌ Wrong password!");
+        bot.sendMessage(CHAT_ID, "❌ Wrong password!", "");
+      }
+
+      enteredPassword = ""; // reset
+    } 
+    else if (key == '*') {
+      enteredPassword = "";
+      Serial.println("Password cleared.");
+    } 
+    else {
+      enteredPassword += key;
+      Serial.print("Entered so far: ");
+      Serial.println(enteredPassword);
+    }
   }
- }
+
+  // === Telegram message check ===
+  if (millis() - lastCheckTime > TELEGRAM_CHECK_INTERVAL) {
+    int numNewMessages = bot.getUpdates(bot.last_message_received + 1);
+    while (numNewMessages) {
+      handleNewMessages(numNewMessages);
+      numNewMessages = bot.getUpdates(bot.last_message_received + 1);
+    }
+    lastCheckTime = millis();
+  }
+
+  delay(150);
 }
