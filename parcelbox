@@ -14,12 +14,20 @@
 #include <UniversalTelegramBot.h>
 #include <ESP32Servo.h>
 #include <Keypad.h>
+#include "time.h"   // For NTP time
+
 
 // === WiFi & Telegram Settings ===
 const char* WIFI_SSID = "realme GT NEO 3";  // WiFi name
 const char* WIFI_PASS = "miskinsangatke";   // WiFi password
 #define BOT_TOKEN "8259717729:AAGfa-sK4DOhWsJcyrXl2sO_QODNMwDc6wI"  // Telegram bot token
 #define CHAT_ID   "1034103142"  // Your Telegram user chat ID
+
+// === NTP Time Settings ===
+const char* ntpServer = "pool.ntp.org";  
+const long gmtOffset_sec = 8 * 3600;     // Malaysia UTC+8
+const int daylightOffset_sec = 0;
+
 
 WiFiClientSecure client;                 // Secure client for HTTPS connection
 UniversalTelegramBot bot(BOT_TOKEN, client);  // Initialize Telegram bot
@@ -63,6 +71,16 @@ String correctPassword = "1234";  // Default password
 String enteredPassword = "";      // Stores user keypad input
 unsigned long lastCheckTime = 0;  // Timer for Telegram message checking
 const unsigned long TELEGRAM_CHECK_INTERVAL = 2000; // Check every 2s
+
+String getTimeStamp() {
+  struct tm timeinfo;
+  if (!getLocalTime(&timeinfo)) {
+    return "Time not available";
+  }
+  char buffer[30];
+  strftime(buffer, sizeof(buffer), "%Y-%m-%d %H:%M:%S", &timeinfo);
+  return String(buffer);
+}
 
 // === Ultrasonic Distance Function ===
 int readUltrasonic() {
@@ -182,6 +200,10 @@ void setup() {
   Serial.println("\n✅ WiFi Connected");
   client.setInsecure(); // Disable SSL check
 
+  configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
+  Serial.println("⏱️ NTP time configured");
+
+
   // Pin setup
   pinMode(TRIG_PIN, OUTPUT);
   pinMode(ECHO_PIN, INPUT);
@@ -196,6 +218,11 @@ void setup() {
   bot.sendMessage(CHAT_ID, "📦 Smart Parcel Box System Online!\nUse /help for commands.", "");
 }
 
+// ============================================================
+// 🔁 MAIN LOOP: Handles Wi-Fi, parcel detection, keypad input,
+// and Telegram communication every cycle
+// ============================================================
+
 // === Main Loop ===
 void loop() {
   ensureWiFiConnected(); // Keep Wi-Fi alive
@@ -209,11 +236,13 @@ void loop() {
   // Detect new parcel
   if (distance > 0 && distance < threshold && !parcelDetected) {
     parcelDetected = true;
-    bot.sendMessage(CHAT_ID, "📦 Parcel detected! Dropping into storage...", "");
+    bot.sendMessage(CHAT_ID, "📦 Parcel detected at " + getTimeStamp() + " ! Dropping into storage..." + "\n", "");
+
 
     moveBothServos(); // Open & close sequence
 
-    bot.sendMessage(CHAT_ID, "✅ Parcel safely stored!", "");
+    bot.sendMessage(CHAT_ID, "✅ Parcel safely stored at " + getTimeStamp() + "\n", "");
+
   }
 
   // Reset detection when parcel removed
@@ -234,15 +263,17 @@ void loop() {
 
       if (enteredPassword == correctPassword) {
         Serial.println("✅ Correct password!");
-        bot.sendMessage(CHAT_ID, "🔓 Correct password! Unlocking door...", "");
+       bot.sendMessage(CHAT_ID, "🔓 Correct password! Unlocking door at " + getTimeStamp() + "\n", "");
+
 
         digitalWrite(LOCK_PIN, HIGH); // Unlock door
         delay(5000);                  // Keep unlocked for 5s
         digitalWrite(LOCK_PIN, LOW);  // Lock again
-        bot.sendMessage(CHAT_ID, "📭 Door locked again.", "");
+        bot.sendMessage(CHAT_ID, "📭 Door locked again."+ getTimeStamp() + "\n", "");
       } else {
         Serial.println("❌ Wrong password!");
-        bot.sendMessage(CHAT_ID, "❌ Wrong password!", "");
+       bot.sendMessage(CHAT_ID, "❌ Wrong password at " + getTimeStamp() + "\n", "");
+
       }
 
       enteredPassword = ""; // Clear after entry
