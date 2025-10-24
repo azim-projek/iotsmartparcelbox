@@ -67,7 +67,7 @@ int distance;                // Calculated distance in cm
 const int threshold = 15;    // Distance threshold to detect parcel
 bool parcelDetected = false; // Flag to prevent duplicate detection
 
-String correctPassword = "1234";  // Default password
+String correctPassword = "123";  // Default password
 String enteredPassword = "";      // Stores user keypad input
 unsigned long lastCheckTime = 0;  // Timer for Telegram message checking
 const unsigned long TELEGRAM_CHECK_INTERVAL = 2000; // Check every 2s
@@ -101,30 +101,35 @@ void moveServo(Servo &servo, int angle, int delayTime = 1000) {
   delay(delayTime);
 }
 
-// === Control Both Servos ===
 void moveBothServos() {
   dropServo.attach(SERVO_DROP);
   doorServo.attach(SERVO_DOOR);
 
-  // Step 1: Rotate clockwise to open
-  dropServo.write(0);
-  doorServo.write(0);
-  delay(3000);
+  // Clockwise rotation (dropServo CW, doorServo CCW)
+  dropServo.write(60);   // CW (<90)
+  doorServo.write(120);  // CCW (>90)
+  delay(1500);           // 3× longer for ~90° equivalent
 
-  // Step 2: Middle position (half rotation)
+  // Stop and hold 5 sec
   dropServo.write(90);
   doorServo.write(90);
-  delay(3000);
+  delay(5000);
 
-  // Step 3: Rotate to 180° to close
-  dropServo.write(180);
-  doorServo.write(180);
-  delay(3000);
+  // Reverse direction (dropServo CCW, doorServo CW)
+  dropServo.write(120);  // CCW (>90)
+  doorServo.write(60);   // CW (<90)
+  delay(1500);           // ~90° back
 
-  // Step 4: Stop & detach to reduce noise
+  // Full stop and HOLD for 5 seconds
+  dropServo.write(90);
+  doorServo.write(90);
+  delay(5000);
+
+  // Detach to stop signal
   dropServo.detach();
   doorServo.detach();
 }
+
 
 // === Wi-Fi Auto Reconnect ===
 void ensureWiFiConnected() {
@@ -299,5 +304,5 @@ void loop() {
     lastCheckTime = millis();
   }
 
-  delay(300); // Prevent flooding
+  delay(350); // Prevent flooding
 }
