@@ -191,6 +191,7 @@ void handleNewMessages(int numNewMessages) {
 // === Setup Function ===
 void setup() {
   Serial.begin(115200);
+  keypad.setDebounceTime(10);  // Clean key press detection
 
   // Connect to Wi-Fi
   WiFi.begin(WIFI_SSID, WIFI_PASS);
@@ -228,35 +229,11 @@ void setup() {
 // and Telegram communication every cycle
 // ============================================================
 
-// === Main Loop ===
+// === Main Loop (Optimized for keypad responsiveness) ===
 void loop() {
   ensureWiFiConnected(); // Keep Wi-Fi alive
 
-  // --- Check Ultrasonic Sensor ---
-  distance = readUltrasonic();
-  Serial.print("Distance: ");
-  Serial.print(distance);
-  Serial.println(" cm");
-
-  // Detect new parcel
-  if (distance > 0 && distance < threshold && !parcelDetected) {
-    parcelDetected = true;
-    bot.sendMessage(CHAT_ID, "📦 Parcel detected at " + getTimeStamp() + " ! Dropping into storage..." + "\n", "");
-
-
-    moveBothServos(); // Open & close sequence
-
-    bot.sendMessage(CHAT_ID, "✅ Parcel safely stored at " + getTimeStamp() + "\n", "");
-
-  }
-
-  // Reset detection when parcel removed
-  if (distance > (threshold + 5) && parcelDetected) {
-    parcelDetected = false;
-    Serial.println("🔁 Ready for next parcel");
-  }
-
-  // --- Keypad Password Entry ---
+  // --- 🧮 Handle keypad FIRST for faster response ---
   char key = keypad.getKey();
   if (key) {
     Serial.print("Key pressed: ");
@@ -268,17 +245,15 @@ void loop() {
 
       if (enteredPassword == correctPassword) {
         Serial.println("✅ Correct password!");
-       bot.sendMessage(CHAT_ID, "🔓 Correct password! Unlocking door at " + getTimeStamp() + "\n", "");
-
+        bot.sendMessage(CHAT_ID, "🔓 Correct password! Unlocking door at " + getTimeStamp() + "\n", "");
 
         digitalWrite(LOCK_PIN, HIGH); // Unlock door
         delay(5000);                  // Keep unlocked for 5s
         digitalWrite(LOCK_PIN, LOW);  // Lock again
-        bot.sendMessage(CHAT_ID, "📭 Door locked again."+ getTimeStamp() + "\n", "");
+        bot.sendMessage(CHAT_ID, "📭 Door locked again. " + getTimeStamp() + "\n", "");
       } else {
         Serial.println("❌ Wrong password!");
-       bot.sendMessage(CHAT_ID, "❌ Wrong password at " + getTimeStamp() + "\n", "");
-
+        bot.sendMessage(CHAT_ID, "❌ Wrong password at " + getTimeStamp() + "\n", "");
       }
 
       enteredPassword = ""; // Clear after entry
@@ -294,7 +269,29 @@ void loop() {
     }
   }
 
-  // --- Telegram Message Check ---
+  // --- 📦 Ultrasonic Parcel Detection ---
+  distance = readUltrasonic();
+  Serial.print("Distance: ");
+  Serial.print(distance);
+  Serial.println(" cm");
+
+  // Detect new parcel
+  if (distance > 0 && distance < threshold && !parcelDetected) {
+    parcelDetected = true;
+    bot.sendMessage(CHAT_ID, "📦 Parcel detected at " + getTimeStamp() + " ! Dropping into storage...\n", "");
+
+    moveBothServos(); // Open & close sequence
+
+    bot.sendMessage(CHAT_ID, "✅ Parcel safely stored at " + getTimeStamp() + "\n", "");
+  }
+
+  // Reset detection when parcel removed
+  if (distance > (threshold + 5) && parcelDetected) {
+    parcelDetected = false;
+    Serial.println("🔁 Ready for next parcel");
+  }
+
+  // --- 💬 Telegram Message Check ---
   if (millis() - lastCheckTime > TELEGRAM_CHECK_INTERVAL) {
     int numNewMessages = bot.getUpdates(bot.last_message_received + 1);
     while (numNewMessages) {
@@ -304,5 +301,5 @@ void loop() {
     lastCheckTime = millis();
   }
 
-  delay(350); // Prevent flooding
+  delay(50); // Faster loop for keypad responsiveness (was 350)
 }
