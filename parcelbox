@@ -18,10 +18,10 @@
 
 
 // === WiFi & Telegram Settings ===
-const char* WIFI_SSID = "realme GT NEO 3";  // WiFi name
-const char* WIFI_PASS = "miskinsangatke";   // WiFi password
-#define BOT_TOKEN "8259717729:AAGfa-sK4DOhWsJcyrXl2sO_QODNMwDc6wI"  // Telegram bot token
-#define CHAT_ID   "1034103142"  // Your Telegram user chat ID
+const char* WIFI_SSID = "POCO X5 5G";  // WiFi name
+const char* WIFI_PASS = "ayamchicken";   // WiFi password
+#define BOT_TOKEN "8321133393:AAFjsvcCAzxkOK0WaG4MfNPzbGlrnY5J2zU"  // Telegram bot token
+#define CHAT_ID   "1105615221"  // Your Telegram user chat ID
 
 // === NTP Time Settings ===
 const char* ntpServer = "pool.ntp.org";  
@@ -67,7 +67,7 @@ int distance;                // Calculated distance in cm
 const int threshold = 15;    // Distance threshold to detect parcel
 bool parcelDetected = false; // Flag to prevent duplicate detection
 
-String correctPassword = "123";  // Default password
+String correctPassword = "000";  // Default password
 String enteredPassword = "";      // Stores user keypad input
 unsigned long lastCheckTime = 0;  // Timer for Telegram message checking
 const unsigned long TELEGRAM_CHECK_INTERVAL = 2000; // Check every 2s
@@ -108,7 +108,7 @@ void moveBothServos() {
   // Clockwise rotation (dropServo CW, doorServo CCW)
   dropServo.write(60);   // CW (<90)
   doorServo.write(120);  // CCW (>90)
-  delay(1500);           // 3× longer for ~90° equivalent
+  delay(4500);           // 3× longer for ~90° equivalent
 
   // Stop and hold 5 sec
   dropServo.write(90);
@@ -118,7 +118,7 @@ void moveBothServos() {
   // Reverse direction (dropServo CCW, doorServo CW)
   dropServo.write(120);  // CCW (>90)
   doorServo.write(60);   // CW (<90)
-  delay(1500);           // ~90° back
+  delay(4500);           // ~90° back
 
   // Full stop and HOLD for 5 seconds
   dropServo.write(90);
@@ -134,7 +134,7 @@ void moveBothServos() {
 // === Wi-Fi Auto Reconnect ===
 void ensureWiFiConnected() {
   if (WiFi.status() != WL_CONNECTED) {
-    Serial.println("⚠️ WiFi lost. Reconnecting...");
+    Serial.println("⚠ WiFi lost. Reconnecting...");
     WiFi.disconnect();
     WiFi.begin(WIFI_SSID, WIFI_PASS);
     unsigned long startAttemptTime = millis();
@@ -179,7 +179,7 @@ void handleNewMessages(int numNewMessages) {
     // /help command to show all commands
     else if (text == "/help") {
       bot.sendMessage(CHAT_ID,
-        "📋 *Smart Parcel Box Commands:*\n"
+        "📋 Smart Parcel Box Commands:\n"
         "/setpass <newpass> - Change password\n"
         "/getpass - Show current password\n"
         "/help - Show command list",
@@ -207,7 +207,7 @@ void setup() {
   client.setInsecure(); // Disable SSL check
 
   configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
-  Serial.println("⏱️ NTP time configured");
+  Serial.println("⏱ NTP time configured");
 
 
   // Pin setup
@@ -261,11 +261,14 @@ void loop() {
     else if (key == '*') {  // Clear input
       enteredPassword = "";
       Serial.println("Password cleared.");
+      bot.sendMessage(CHAT_ID, " Password cleared. " + getTimeStamp() + "\n", "");
     } 
     else {  // Add character to password
       enteredPassword += key;
       Serial.print("Entered so far: ");
       Serial.println(enteredPassword);
+      bot.sendMessage(CHAT_ID, "enteredPassword " + getTimeStamp() + "\n", "");
+
     }
   }
 
@@ -301,5 +304,5 @@ void loop() {
     lastCheckTime = millis();
   }
 
-  delay(50); // Faster loop for keypad responsiveness (was 350)
+  delay(10); // Faster loop for keypad responsiveness (was 350)
 }
